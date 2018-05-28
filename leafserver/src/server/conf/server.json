@@ -1,0 +1,7 @@
+{
+	"LogLevel": "",
+	"LogPath": "C:/Users/lizha/Desktop/src/leafserver",
+	"WSAddr": "127.0.0.1:3563",
+    "TCPAddr": "127.0.0.1:3564",
+	"MaxConnNum": 20000
+}
