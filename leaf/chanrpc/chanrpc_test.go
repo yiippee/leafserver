@@ -6,7 +6,7 @@ import (
 	"sync"
 )
 
-func Example() {
+func Example_test() {
 	s := chanrpc.NewServer(10)
 
 	var wg sync.WaitGroup

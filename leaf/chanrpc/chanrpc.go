@@ -146,7 +146,7 @@ func (s *Server) Go(id interface{}, args ...interface{}) {
 		recover()
 	}()
 
-	// 往通道里写入数据 函数 和 参数
+	// 往通道里写入数据 函数 和 参数。写完就直接返回，不需要处理server端的执行结果
 	s.ChanCall <- &CallInfo{
 		f:    f,
 		args: args,
@@ -204,9 +204,10 @@ func (c *Client) call(ci *CallInfo, block bool) (err error) {
 	}()
 
 	if block {
+		// 如果是同步模式,则将构建好了的callInfo发给server端的chan。如果chan满了则会阻塞等待
 		c.s.ChanCall <- ci
 	} else {
-		select {
+		select { // 异步模式，则会报错
 		case c.s.ChanCall <- ci:
 		default:
 			err = errors.New("chanrpc channel full")
@@ -221,7 +222,7 @@ func (c *Client) f(id interface{}, n int) (f interface{}, err error) {
 		return
 	}
 
-	f = c.s.functions[id]
+	f = c.s.functions[id] // 从注册好了的functions字典中获取具体的函数,这里用到了客户端对server端的引用
 	if f == nil {
 		err = fmt.Errorf("function id %v: function not registered", id)
 		return
@@ -266,21 +267,22 @@ func (c *Client) Call0(id interface{}, args ...interface{}) error {
 }
 
 func (c *Client) Call1(id interface{}, args ...interface{}) (interface{}, error) {
-	f, err := c.f(id, 1)
+	f, err := c.f(id, 1) // 从注册好了的functions字典中获取具体的函数
 	if err != nil {
 		return nil, err
 	}
 
-	err = c.call(&CallInfo{
+	err = c.call(&CallInfo{ // 获得注册的函数后，构造callInfo数据。执行call
 		f:       f,
 		args:    args,
 		chanRet: c.chanSyncRet,
-	}, true)
+	}, true /*设置为同步模式访问*/)
 	if err != nil {
 		return nil, err
 	}
 
-	ri := <-c.chanSyncRet
+	// callInfo 已经发给server端了，那么就等着server端将回复数据发到客户端的等待同步chan里面chanSyncRet
+	ri := <-c.chanSyncRet // 如果有数据直接返回，如果没有，则会一直等待，所以是同步的。
 	return ri.ret, ri.err
 }
 
@@ -314,7 +316,10 @@ func (c *Client) asynCall(id interface{}, args []interface{}, cb interface{}, n 
 		f:       f,
 		args:    args,
 		chanRet: c.ChanAsynRet,
-		cb:      cb,
+		cb:      cb, // 异步回调函数，服务端会执行cb进行回调。本质上是各种指针的执行。
+		             // 上面的说法是错误的，由于server与client之间所有的通信都是基于chan
+		             // 的，所以不可能会直接通过地址调用某个函数，而是会将函数和参数发回client的回复chan中
+		             // 让client自己去调用，因为此时client阻塞在cb中
 	}, false)
 	if err != nil {
 		c.ChanAsynRet <- &RetInfo{err: err, cb: cb}
